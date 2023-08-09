@@ -4,10 +4,13 @@ import pickle
 import hashlib
 def run_cmd(cmd):
     print(cmd)
-
-    if err := os.system(cmd) != 0:
-        print(f'{cmd} exited with non-zero ({err}) code. Terminating')
-        sys.exit(err)
+    rs = os.system(cmd);
+    if type(rs) == bool and not rs:
+        print(f'{cmd} exited with boolean false. Terminating')
+        sys.exit(-1)
+    elif rs != 0:
+        print(f"{cmd} exited with non-zero ({rs}) code. Terminating")
+        sys.exit(rs)
 
 targets = {}
 cache = {}

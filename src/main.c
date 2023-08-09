@@ -5,6 +5,7 @@
 #include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
+#include <setjmp.h>
 #include <dirent.h>
 #include "ai/ai.h"
 #include "server.h"
@@ -13,55 +14,23 @@
 #include "hashmap.h"
 #include "util.h"
 
-
 void release_socket(Client* client) {
     close(client->socket);
     void** elmData = client->completions.element_data;
     if(elmData) {
         arraylist_free(&client->completions);
     }
+    // free(client->tid);
     free(client);
 }
-
-char* str_replace(char* str, const char* old, const char* new) {
-    char* result;
-    int i, cnt = 0;
-    int newLen = strlen(new);
-    int oldLen = strlen(old);
-
-    // Counting the number of times old substring occurs in the original string
-    for (i = 0; str[i] != '\0'; i++) {
-        if (strstr(&str[i], old) == &str[i]) {
-            cnt++;
-            i += oldLen - 1;
-        }
-    }
-
-    // Allocate memory for the new string
-    result = (char*)malloc(i + cnt * (newLen - oldLen) + 1);
-
-    i = 0;
-    while (*str) {
-        // Compare the substring with the result
-        if (strstr(str, old) == str) {
-            strcpy(&result[i], new);
-            i += newLen;
-            str += oldLen;
-        } else
-            result[i++] = *str++;
-    }
-    result[i] = '\0';
-    return result;
-}
-
 
 static volatile int keepRunning = 1;
 void sigint(int dummy) {
     keepRunning = 0;
 }
+
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 int main(int argc, char** argv) {
-    init_ai();
     if (argc != 2) {
         printf("Usage: %s <port>\n", argv[0]);
         return 1;
@@ -71,7 +40,7 @@ int main(int argc, char** argv) {
     int server_socket, client_socket;
     struct sockaddr_in server_address, client_address;
     socklen_t client_address_len = sizeof(client_address);
-    pthread_t tid;
+
     HashMap* clients = hashmap_new(sizeof(size_t), 2, 0, 0, NULL, compare_clients, NULL, NULL);
     // client_t *clients[MAX_CLIENTS] = {0};
 
@@ -118,12 +87,13 @@ int main(int argc, char** argv) {
             close(client_socket);
             continue;
         }
-
+        pthread_t* tid = (pthread_t*) malloc(sizeof(pthread_t));
         client->socket = client_socket;
         client->address = client_address;
         client->completions = arraylist(1);
         client->clients = clients;
-        if (pthread_create(&tid, NULL, client_handle, (void*) client) != 0) {
+        // pthread_getspecific
+        if (pthread_create(tid, NULL, client_handle, (void*) client) != 0) {
             perror("Thread creation failed");
             send_error(client, NULL, "Failed to create handle for the connection (our end)", 0x11);
             release_socket(client);
@@ -141,11 +111,13 @@ void* client_handle(void* _transfer) {
     pthread_mutex_lock(&mutex);
     hashmap_set_with_hash(clients, _transfer, socket_num);
     pthread_mutex_unlock(&mutex);
+    
+    pthread_key_t key;
+    pthread_key_create(&key, NULL);
+    pthread_setspecific(key, NULL);
+    printf("Client connected: %s:%d\n", inet_ntoa(client->address.sin_addr), ntohs(client->address.sin_port));
     uint8_t buffer[BUFFER_SIZE];
     int bytes_received;
-
-    printf("Client connected: %s:%d\n", inet_ntoa(client->address.sin_addr), ntohs(client->address.sin_port));
-
     // Main client communication loop
     while ((bytes_received = recv(client->socket, buffer, BUFFER_SIZE, 0)) > 0) {
         on_read(client, &buffer, (size_t) bytes_received);
@@ -184,7 +156,7 @@ void handle_avail_prompts_req(Client* client, const uint8_t* buff, size_t len) {
         while((entry = readdir(dir))) {
             if(entry->d_type != DT_REG) continue; // Filtering actual files
             // fori
-            arraylist_add(&entries, str_replace(entry->d_name, ".txt", ""));
+            arraylist_add(&entries, entry->d_name);
         }
     }    
     response.askid = message->askid;
@@ -192,9 +164,9 @@ void handle_avail_prompts_req(Client* client, const uint8_t* buff, size_t len) {
     response.n_names = entries.size;
     // freeing malloc allocated strings from str_replace
     send_protobuf(client, ai_server__available_preset_prompts_response__pack, &response);
-    for(size_t i = 0; i < entries.size; i++) {
-        free(entries.element_data[i]);
-    }
+    // for(size_t i = 0; i < entries.size; i++) {
+    //     free(entries.element_data[i]);
+    // }
     // freeing element data
     arraylist_free(&entries);
     if(dir) {
@@ -245,6 +217,14 @@ void on_read(Client* client, uint8_t* buff, size_t bytes_received) {
         for(uint8_t i = 0; i < sizeof(handlers) / sizeof(void*); i += 2) {
             if(packet_id != (uint8_t) handlers[i]) continue;
             ((void (*)(Client*, uint8_t*, size_t)) handlers[i+1])(client, &buff[index+3], message_len - 1);
+            
+            // if(setjmp(assertion_env) == 0) {
+                
+                
+            // } else {
+
+            //     send_error(client, NULL, "Packet triggered server assertion. (Packet id doesn't correspond to message?)");
+            // }
             goto removed;
         }
         send_error(client, NULL, "Invalid packet", 0x1);

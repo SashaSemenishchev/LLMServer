@@ -12,7 +12,9 @@ typedef struct Client {
     int socket;
     SocketAddr address;
     HashMap* clients;
+    // pthread_key_t thread_key;
     ArrayList completions;
+    
 } Client;
 
 #define SEARCH_CLIENT (Client){}
@@ -20,6 +22,7 @@ typedef struct Client {
 
 // Pointer to ClientThreadTransfer
 // always returns 0 (NULLPTR)
+void release_socket(Client* client);
 void* client_handle(void* arg);
 int compare_clients(const void* a, const void* b, void* udata);
 static inline void send_message(Client* client, uint8_t* message, size_t len);

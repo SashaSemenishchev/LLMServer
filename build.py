@@ -13,6 +13,7 @@ CXX = "g++"
 SRC_FOLDER = "src"
 CCFLAGS = ["-Wall", "-Wextra"]
 LDFLAGS = []
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--release", action="store_true", help="builds release project")
 parser.add_argument("--impl", type=str, default="falcon")
