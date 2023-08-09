@@ -6,11 +6,13 @@
 #include <signal.h>
 #include <stdio.h>
 #include <dirent.h>
+#include "ai/ai.h"
 #include "server.h"
 #include "protocol/client.pb-c.h"
 #include "protocol/server.pb-c.h"
 #include "hashmap.h"
 #include "util.h"
+
 
 void release_socket(Client* client) {
     close(client->socket);
@@ -58,8 +60,8 @@ void sigint(int dummy) {
     keepRunning = 0;
 }
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-static void* aiservice;
 int main(int argc, char** argv) {
+    init_ai();
     if (argc != 2) {
         printf("Usage: %s <port>\n", argv[0]);
         return 1;
@@ -181,20 +183,22 @@ void handle_avail_prompts_req(Client* client, const uint8_t* buff, size_t len) {
     if(dir) {
         while((entry = readdir(dir))) {
             if(entry->d_type != DT_REG) continue; // Filtering actual files
+            // fori
             arraylist_add(&entries, str_replace(entry->d_name, ".txt", ""));
         }
     }    
     response.askid = message->askid;
     response.names = entries.element_data;
     response.n_names = entries.size;
+    // freeing malloc allocated strings from str_replace
     send_protobuf(client, ai_server__available_preset_prompts_response__pack, &response);
     for(size_t i = 0; i < entries.size; i++) {
         free(entries.element_data[i]);
     }
-    // freeing malloc allocated strings from str_replace
+    // freeing element data
     arraylist_free(&entries);
     if(dir) {
-        closedir(dir);
+        closedir(dir); // freeing structs which were allocated
     }
     ai_client__available_preset_prompts_request__free_unpacked(message, NULL);
 }
